@@ -21,9 +21,9 @@
     *{box-sizing:border-box}
 
     @keyframes bgShift{
-      0%{ background-position: 0% 0%, 0% 0%;}
-      50%{ background-position: 100% 50%, 50% 100%;}
-      100%{ background-position: 0% 0%, 0% 0%;}
+      0%{ background-position: 0% 0%, 0% 0%; }
+      50%{ background-position: 100% 50%, 50% 100%; }
+      100%{ background-position: 0% 0%, 0% 0%; }
     }
     body{
       margin:0; min-height:100vh; color:var(--text);
@@ -43,7 +43,6 @@
       border:1px solid var(--border); box-shadow:var(--shadow); overflow:hidden;
       position:relative;
     }
-    /* soft spotlight */
     .board::before{
       content:""; position:absolute; inset:-2px;
       background: radial-gradient(900px 500px at 25% -10%, rgba(255,255,255,.18), transparent 60%);
@@ -55,13 +54,17 @@
       padding:18px 22px; border-bottom:1px solid rgba(255,255,255,.12);
       background:linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,0));
     }
-    .bar .place{font-weight:700; font-size:22px; letter-spacing:.2px; text-shadow:0 1px 0 rgba(0,0,0,.25)}
-    .bar .chip{
+    .bar .place{
+      font-weight:700; font-size:22px; letter-spacing:.2px;
+      text-shadow:0 1px 0 rgba(0,0,0,.25)
+    }
+    .chip{
       font-size:14px; font-weight:600; color:#18325e;
       background:rgba(255,255,255,.95);
       border:1px solid rgba(255,255,255,.98);
       padding:6px 12px; border-radius:999px;
       box-shadow:0 8px 18px rgba(0,0,0,.18);
+      min-width:92px; text-align:center;
     }
 
     .grid{display:grid; grid-template-columns: 1.3fr .7fr; gap:18px; padding:18px;}
@@ -143,11 +146,12 @@
   <div class="board">
     <div class="bar">
       <div class="place">Temperature and Humidity</div>
-      <div class="chip">24 ชม.</div>
+      <!-- เปลี่ยนจากข้อความ "24 ชม." เป็นนาฬิกาเรียลไทม์ -->
+      <div class="chip" id="clock">--:--:--</div>
     </div>
 
     <div class="grid">
-      <!-- Left:Tem perature block -->
+      <!-- Left: Temperature block -->
       <section class="main">
         <div class="icon">☀️</div>
         <div class="tempBlock">
@@ -197,7 +201,21 @@
       if (el) el.textContent = value;
     }
 
-    /* rolling history for chart (front-end only) */
+    /* ===== นาฬิกาเรียลไทม์บนแถบบน ===== */
+    function updateClock(){
+      const el = document.getElementById('clock');
+      if (!el) return;
+      const now = new Date();
+      // เวลา 24 ชั่วโมง พร้อมวินาที ตามโลเคชันเครื่องผู้ใช้ (ใช้ th-TH เพื่อจัดรูปแบบไทย)
+      const timeStr = now.toLocaleTimeString('th-TH', {
+        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+      });
+      el.textContent = timeStr;
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    /* ===== rolling history for chart (front-end only) ===== */
     const MAX_POINTS = 60;
     const series = { t: [], h: [], ts: [] };
 
