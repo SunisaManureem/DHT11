@@ -56,7 +56,7 @@
     .row{display:flex;align-items:center;justify-content:space-between;gap:12px}
     .label{font-weight:800;color:#2b3c54;display:flex;align-items:center;gap:8px}
 
-    /* ===== Donut (แก้ z-index ให้เลขอยู่บน) ===== */
+    /* ===== Donut (เลขอยู่บน) ===== */
     .donut{--p:0; width:128px; height:128px; border-radius:50%;
       background: conic-gradient(var(--lineH) calc(var(--p)*1%), #e3e9f1 0),
                   radial-gradient(closest-side, #ffffff 72%, transparent 74%, transparent 100%);
@@ -66,11 +66,11 @@
     .donut:after{
       content:""; position:absolute; inset:12px; border-radius:50%;
       background:linear-gradient(180deg,#ffffff,#eef2f7); border:1px solid rgba(0,0,0,.04);
-      z-index:0; pointer-events:none; /* ให้อยู่ชั้นล่างและไม่บังการคลิก */
+      z-index:0; pointer-events:none;
     }
     .donut .num{
       position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
-      font-size:34px; font-weight:800; color:#2b3c54; z-index:1; /* ตัวเลขอยู่ชั้นบนสุด */
+      font-size:34px; font-weight:800; color:#2b3c54; z-index:1;
     }
 
     .chart-panel{grid-column:1 / -1;}
@@ -84,6 +84,14 @@
     .status-wrap{display:flex; justify-content:center; margin-top:14px}
     #status-message{color:#2b3c54; background:#ffffff; border:1px solid rgba(0,0,0,.06);
       border-radius:999px; padding:10px 18px; font-weight:800; box-shadow:0 10px 20px rgba(0,0,0,.12);}
+
+    /* ===== ตารางประวัติ (เพิ่มใหม่) ===== */
+    .history{grid-column:1 / -1;}
+    .table-wrap{overflow:auto; max-height:360px; border:1px solid var(--card-border); border-radius:16px; background:#fff;}
+    table{width:100%; border-collapse:collapse; font-family:'Poppins',system-ui,Arial,sans-serif; color:#2b3c54;}
+    thead th{position:sticky; top:0; background:#eef3fb; font-weight:800; font-size:14px; text-align:left; padding:10px 12px; border-bottom:1px solid rgba(0,0,0,.06);}
+    tbody td{padding:10px 12px; border-bottom:1px solid rgba(0,0,0,.06); font-weight:600;}
+    tbody tr:nth-child(odd){background:#fafcff;}
   </style>
 </head>
 <body>
@@ -126,6 +134,25 @@
           <span style="display:flex;align-items:center;gap:6px"><span class="dot h"></span>Humidity</span>
         </div>
         <canvas id="chart"></canvas>
+      </section>
+
+      <!-- ตารางประวัติย้อนหลัง (ใหม่) -->
+      <section class="card history">
+        <h3 style="margin:0 0 10px 0; color:#2b3c54">ประวัติย้อนหลัง (MongoDB)</h3>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>เวลา</th>
+                <th>อุณหภูมิ (°C)</th>
+                <th>ความชื้น (%RH)</th>
+              </tr>
+            </thead>
+            <tbody id="history-body">
+              <!-- rows will be injected here -->
+            </tbody>
+          </table>
+        </div>
       </section>
     </div>
   </div>
@@ -251,13 +278,43 @@
       ctx.beginPath(); for(let i=0;i<N;i++){ const x=xAt(i), y=yAt(sample(anim.fromH,anim.toH,i)); i?ctx.lineTo(x,y):ctx.moveTo(x,y); } ctx.stroke(); ctx.restore();
     }
 
-    function pushPoint(temp, hum){
-      const now = Date.now();
+    // --- ปรับให้รับ timestamp ได้ เพื่อใช้ค่า at จาก /data และ /history ---
+    function pushPoint(temp, hum, ts = Date.now()){
       series.t.push(Number(temp));
       series.h.push(Number(hum));
-      series.ts.push(now);
+      series.ts.push(Number(ts));
       if(series.t.length > MAX_POINTS){ series.t.shift(); series.h.shift(); series.ts.shift(); }
       scheduleAnimation();
+    }
+
+    // โหลดประวัติจาก MongoDB แล้วเติมลงกราฟ + ตาราง
+    async function loadHistory(limit = 120){
+      try{
+        const res = await fetch(`${BACKEND_BASE}/history?limit=${limit}`, { cache: "no-store" });
+        const docs = await res.json();
+        const tbody = document.getElementById('history-body');
+        tbody.innerHTML = '';
+
+        // เติมลงกราฟก่อน
+        docs.forEach(d => {
+          const ts = new Date(d.at).getTime();
+          pushPoint(d.temperature, d.humidity, ts);
+        });
+
+        // แสดงเป็นตาราง (ล่าสุดอยู่ล่างสุดตามเวลา)
+        docs.forEach(d => {
+          const tr = document.createElement('tr');
+          const tStr = new Date(d.at).toLocaleString('th-TH', { hour12:false });
+          tr.innerHTML = `
+            <td>${tStr}</td>
+            <td>${Number(d.temperature).toFixed(1)}</td>
+            <td>${Number(d.humidity).toFixed(0)}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      }catch(e){
+        console.error('loadHistory error:', e);
+      }
     }
 
     async function fetchData(){
@@ -268,7 +325,10 @@
         if (data.temperature !== null){
           const t = Number(data.temperature);
           setText("temperature-value", t.toFixed(1));
-          if(!isNaN(t) && data.humidity !== null) pushPoint(t, Number(data.humidity));
+          if(!isNaN(t) && data.humidity !== null){
+            const ts = data.at ?? Date.now(); // ใช้เวลา at จาก backend ถ้ามี
+            pushPoint(t, Number(data.humidity), ts);
+          }
         }
         if (data.humidity !== null){
           const h = Number(data.humidity);
@@ -283,8 +343,11 @@
       }
     }
 
-    fetchData();
-    setInterval(fetchData, 5000);
+    // โหลดประวัติก่อน แล้วค่อยเริ่มดึงปัจจุบันตามปกติ
+    loadHistory(120).finally(() => {
+      fetchData();
+      setInterval(fetchData, 5000);
+    });
   </script>
 </body>
 </html>
