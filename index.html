@@ -74,6 +74,16 @@
     .t{background:var(--lineT)} .h{background:var(--lineH)}
     canvas{width:100%; height:320px; display:block}
 
+    /* คำอธิบายแกน */
+    .axes-note{
+      display:flex; gap:16px; align-items:center;
+      font-size:12px; color:#5f738f; font-weight:700; margin-top:10px;
+    }
+    .axis-badge{
+      background:#e6ebf2; border:1px solid rgba(0,0,0,.06);
+      border-radius:8px; padding:4px 8px;
+    }
+
     .status-wrap{display:flex; justify-content:center; margin-top:14px}
     #status-message{color:#2b3c54; background:#ffffff; border:1px solid rgba(0,0,0,.06);
       border-radius:999px; padding:10px 18px; font-weight:800; box-shadow:0 10px 20px rgba(0,0,0,.12);}
@@ -82,8 +92,7 @@
 <body>
   <div class="board">
     <div class="bar">
-      <div class="place">Bangkok</div>
-      <!-- ชิปเวลาจริง -->
+      <div class="place">Temperature & Humidity Dashboard</div>
       <div class="chip" id="clock">--:--:--</div>
     </div>
 
@@ -95,14 +104,14 @@
             <div id="temperature-value">--</div>
             <div class="unit">°C</div>
           </div>
-          <div class="subtext">อุณหภูมิ</div>
+          <div class="subtext">Temperature</div>
         </div>
       </section>
 
       <section class="side">
         <div class="card">
           <div class="row">
-            <div class="label">ความชื้นสัมพัทธ์</div>
+            <div class="label">Humidity</div>
             <div class="donut" id="humidity-donut" style="--p:0">
               <span class="num" id="humidity-value">--%</span>
             </div>
@@ -120,6 +129,12 @@
           <span style="display:flex;align-items:center;gap:6px"><span class="dot h"></span>Humidity</span>
         </div>
         <canvas id="chart"></canvas>
+
+        <!-- คำอธิบายแกน X/Y ใต้กราฟ -->
+        <div class="axes-note">
+          <span class="axis-badge">แกน X = เวลา (เรียลไทม์)</span>
+          <span class="axis-badge">แกน Y = อุณหภูมิ (°C) / ความชื้น (%RH)</span>
+        </div>
       </section>
     </div>
   </div>
@@ -156,6 +171,7 @@
 
     function drawChart(progress=1){
       const w = canvas.width, h = canvas.height; ctx.clearRect(0,0,w,h);
+      // grid
       ctx.save(); ctx.strokeStyle='rgba(0,0,0,.10)'; ctx.lineWidth=1*dpi;
       const gx=8, gy=5; for(let i=1;i<gx;i++){ const x=(w/gx)*i; ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke(); }
       for(let i=1;i<gy;i++){ const y=(h/gy)*i; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); } ctx.restore();
@@ -168,9 +184,11 @@
       const xAt=i=>pad+(i/(N-1))*plotW, yAtT=v=>pad+(1-(v-yMinT)/(yMaxT-yMinT))*plotH, yAtH=v=>pad+(1-(v-yMinH)/(yMaxH-yMinH))*plotH;
       const sample=(a,b,i)=>lerp(a[i]??b[i], b[i], progress);
 
+      // temp (ส้ม)
       ctx.save(); ctx.lineWidth=3*dpi; ctx.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue('--lineT').trim();
       ctx.beginPath(); for(let i=0;i<N;i++){ const x=xAt(i); const y=yAtT(sample(anim.fromT,anim.toT,i)); i?ctx.lineTo(x,y):ctx.moveTo(x,y); } ctx.stroke(); ctx.restore();
 
+      // humidity (ฟ้า)
       ctx.save(); ctx.lineWidth=3*dpi; ctx.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue('--lineH').trim();
       ctx.beginPath(); for(let i=0;i<N;i++){ const x=xAt(i); const y=yAtH(sample(anim.fromH,anim.toH,i)); i?ctx.lineTo(x,y):ctx.moveTo(x,y); } ctx.stroke(); ctx.restore();
     }
