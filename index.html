@@ -72,17 +72,8 @@
       background:#e6ebf2; border:1px solid rgba(0,0,0,.06); border-radius:999px; padding:6px 10px; box-shadow:0 6px 14px rgba(0,0,0,.08);}
     .dot{width:10px;height:10px;border-radius:50%;}
     .t{background:var(--lineT)} .h{background:var(--lineH)}
-    canvas{width:100%; height:320px; display:block}
-
-    /* คำอธิบายแกน */
-    .axes-note{
-      display:flex; gap:16px; align-items:center;
-      font-size:12px; color:#5f738f; font-weight:700; margin-top:10px;
-    }
-    .axis-badge{
-      background:#e6ebf2; border:1px solid rgba(0,0,0,.06);
-      border-radius:8px; padding:4px 8px;
-    }
+    /* เพิ่มความสูงเล็กน้อยเพื่อมีที่ว่างให้ข้อความแกนล่าง */
+    canvas{width:100%; height:340px; display:block}
 
     .status-wrap{display:flex; justify-content:center; margin-top:14px}
     #status-message{color:#2b3c54; background:#ffffff; border:1px solid rgba(0,0,0,.06);
@@ -129,91 +120,221 @@
           <span style="display:flex;align-items:center;gap:6px"><span class="dot h"></span>Humidity</span>
         </div>
         <canvas id="chart"></canvas>
-
-        <!-- คำอธิบายแกน X/Y ใต้กราฟ -->
-        <div class="axes-note">
-          <span class="axis-badge">แกน X = เวลา (เรียลไทม์)</span>
-          <span class="axis-badge">แกน Y = อุณหภูมิ (°C) / ความชื้น (%RH)</span>
-        </div>
       </section>
     </div>
   </div>
 
   <script>
-    /* ===== Backend polling & chart logic (unchanged) ===== */
+    /* ===== Backend polling & chart logic ===== */
     const BACKEND_BASE = "https://dht11-2gtd.onrender.com";
+    const MAX_POINTS = 60;                    // ~5 นาที หากดึงทุก 5 วินาที
+    const series = { t: [], h: [], ts: [] };  // temp, humidity, timestamp
+
     function setText(id, value){ const el = document.getElementById(id); if (el) el.textContent = value; }
 
-    // realtime clock on the chip
+    // realtime clock
     function updateClock(){
       const el = document.getElementById('clock'); if (!el) return;
-      const now = new Date();
-      el.textContent = now.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+      el.textContent = new Date().toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
     }
     updateClock(); setInterval(updateClock, 1000);
 
-    // chart data
-    const MAX_POINTS = 60; const series = { t: [], h: [], ts: [] };
-    const canvas = document.getElementById('chart'); const ctx = canvas.getContext('2d'); let dpi = 1;
+    // canvas
+    const canvas = document.getElementById('chart');
+    const ctx = canvas.getContext('2d');
+    let dpi = 1;
 
     function resizeCanvas(){
-      const rect = canvas.getBoundingClientRect(); dpi = window.devicePixelRatio || 1;
-      canvas.width = Math.round(rect.width * dpi); canvas.height = Math.round(rect.height * dpi); drawChart(1);
+      const rect = canvas.getBoundingClientRect();
+      dpi = window.devicePixelRatio || 1;
+      canvas.width  = Math.round(rect.width  * dpi);
+      canvas.height = Math.round(rect.height * dpi);
+      drawChart(1);
     }
     window.addEventListener('resize', resizeCanvas); resizeCanvas();
 
     function lerp(a,b,t){ return a + (b-a)*t; }
-    function niceRange(min, max){ if (min === max) { min -= 1; max += 1; } const pad = (max-min)*0.15; return [Math.floor(min-pad), Math.ceil(max+pad)]; }
+    function niceRange(min, max){
+      if (min === max){ min -= 1; max += 1; }
+      const pad = (max - min) * 0.15;
+      return [Math.floor(min - pad), Math.ceil(max + pad)];
+    }
 
     let anim = { fromT:[], toT:[], fromH:[], toH:[], start:0, dur:800 };
-    function scheduleAnimation(){ anim.fromT = anim.toT.slice(); anim.fromH = anim.toH.slice(); anim.toT = series.t.slice(); anim.toH = series.h.slice(); anim.start = performance.now(); requestAnimationFrame(tick); }
-    function tick(now){ const p = Math.min(1,(now-anim.start)/anim.dur); drawChart(p); if (p<1) requestAnimationFrame(tick); }
+    function scheduleAnimation(){
+      anim.fromT = anim.toT.slice(); anim.fromH = anim.toH.slice();
+      anim.toT = series.t.slice();   anim.toH  = series.h.slice();
+      anim.start = performance.now(); requestAnimationFrame(tick);
+    }
+    function tick(now){ const p=Math.min(1,(now-anim.start)/anim.dur); drawChart(p); if(p<1) requestAnimationFrame(tick); }
+
+    function formatTime(ts){
+      return new Date(ts).toLocaleTimeString('th-TH', { hour:'2-digit', minute:'2-digit', hour12:false });
+    }
 
     function drawChart(progress=1){
-      const w = canvas.width, h = canvas.height; ctx.clearRect(0,0,w,h);
-      // grid
-      ctx.save(); ctx.strokeStyle='rgba(0,0,0,.10)'; ctx.lineWidth=1*dpi;
-      const gx=8, gy=5; for(let i=1;i<gx;i++){ const x=(w/gx)*i; ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke(); }
-      for(let i=1;i<gy;i++){ const y=(h/gy)*i; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); } ctx.restore();
-      if(series.t.length<2) return;
+      const w = canvas.width, h = canvas.height;
+      ctx.clearRect(0,0,w,h);
 
-      const minT=Math.min(...series.t), maxT=Math.max(...series.t);
-      const minH=Math.min(...series.h), maxH=Math.max(...series.h);
-      const [yMinT,yMaxT]=niceRange(minT,maxT); const [yMinH,yMaxH]=niceRange(minH,maxH);
-      const N=series.t.length, pad=18*dpi, plotW=w-pad*2, plotH=h-pad*2;
-      const xAt=i=>pad+(i/(N-1))*plotW, yAtT=v=>pad+(1-(v-yMinT)/(yMaxT-yMinT))*plotH, yAtH=v=>pad+(1-(v-yMinH)/(yMaxH-yMinH))*plotH;
-      const sample=(a,b,i)=>lerp(a[i]??b[i], b[i], progress);
+      // padding สำหรับแกน/ป้าย (เผื่อที่ซ้ายให้ข้อความแกน Y แนวตั้ง)
+      const leftPad  = 46 * dpi;
+      const rightPad = 16 * dpi;
+      const topPad   = 16 * dpi;
+      const botPad   = 42 * dpi; // เผื่อที่สำหรับ "เวลา (เรียลไทม์)"
+      const plotW = w - leftPad - rightPad;
+      const plotH = h - topPad - botPad;
 
-      // temp (ส้ม)
-      ctx.save(); ctx.lineWidth=3*dpi; ctx.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue('--lineT').trim();
-      ctx.beginPath(); for(let i=0;i<N;i++){ const x=xAt(i); const y=yAtT(sample(anim.fromT,anim.toT,i)); i?ctx.lineTo(x,y):ctx.moveTo(x,y); } ctx.stroke(); ctx.restore();
+      // ค่าช่วงแกน
+      const hasData = series.t.length >= 2;
+      const minT = hasData ? Math.min(...series.t) : 20;
+      const maxT = hasData ? Math.max(...series.t) : 30;
+      const minH = hasData ? Math.min(...series.h) : 40;
+      const maxH = hasData ? Math.max(...series.h) : 80;
 
-      // humidity (ฟ้า)
-      ctx.save(); ctx.lineWidth=3*dpi; ctx.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue('--lineH').trim();
-      ctx.beginPath(); for(let i=0;i<N;i++){ const x=xAt(i); const y=yAtH(sample(anim.fromH,anim.toH,i)); i?ctx.lineTo(x,y):ctx.moveTo(x,y); } ctx.stroke(); ctx.restore();
+      const [yMin,yMax] = niceRange(Math.min(minT,minH), Math.max(maxT,maxH));
+      const N = Math.max(series.t.length, 2);
+
+      const xAt = i => leftPad + (i/(N-1))*plotW;
+      const yAt = v => topPad + (1 - (v - yMin)/(yMax - yMin))*plotH;
+
+      // ===== Grid =====
+      const gx = 8, gy = 5;  // จำนวนช่อง
+      ctx.save();
+      ctx.strokeStyle = 'rgba(0,0,0,.10)';
+      ctx.lineWidth = 1 * dpi;
+
+      for(let i=0;i<=gx;i++){
+        const x = leftPad + (plotW/gx)*i;
+        ctx.beginPath(); ctx.moveTo(x, topPad); ctx.lineTo(x, topPad+plotH); ctx.stroke();
+      }
+      for(let i=0;i<=gy;i++){
+        const y = topPad + (plotH/gy)*i;
+        ctx.beginPath(); ctx.moveTo(leftPad, y); ctx.lineTo(leftPad+plotW, y); ctx.stroke();
+      }
+      ctx.restore();
+
+      // ===== Tick labels (Y) =====
+      ctx.save();
+      ctx.fillStyle = '#5f738f';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.font = `${12*dpi}px Poppins, sans-serif`;
+      for(let i=0;i<=gy;i++){
+        const y = topPad + (plotH/gy)*i;
+        const val = yMax - (yMax - yMin) * (i/gy);
+        ctx.fillText(val.toFixed(0), leftPad - 6*dpi, y);
+      }
+      ctx.restore();
+
+      // ===== Tick labels (X) =====
+      ctx.save();
+      ctx.fillStyle = '#5f738f';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.font = `${12*dpi}px Poppins, sans-serif`;
+
+      if(hasData){
+        const minTs = series.ts[0];
+        const maxTs = series.ts[series.ts.length-1];
+        for(let i=0;i<=gx;i++){
+          const t = lerp(minTs, maxTs, i/gx);
+          ctx.fillText(formatTime(t), leftPad + (plotW/gx)*i, topPad + plotH + 8*dpi);
+        }
+      }else{
+        // ไม่มีข้อมูล: แสดงเวลาปัจจุบันเป็นตัวอย่าง 6 ตำแหน่ง
+        const now = Date.now();
+        for(let i=0;i<=gx;i++){
+          ctx.fillText(formatTime(now), leftPad + (plotW/gx)*i, topPad + plotH + 8*dpi);
+        }
+      }
+      ctx.restore();
+
+      // ===== Axis titles =====
+      // Y axis (vertical, ซ้ายมือ)
+      ctx.save();
+      ctx.fillStyle = '#2b3c54';
+      ctx.font = `${12*dpi}px Poppins, sans-serif`;
+      ctx.translate(12*dpi, topPad + plotH/2);
+      ctx.rotate(-Math.PI/2);
+      ctx.textAlign = 'center';
+      ctx.fillText('อุณหภูมิ (°C) / ความชื้น (%RH)', 0, 0);
+      ctx.restore();
+
+      // X axis (centered bottom)
+      ctx.save();
+      ctx.fillStyle = '#2b3c54';
+      ctx.font = `${12*dpi}px Poppins, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText('เวลา (เรียลไทม์)', leftPad + plotW/2, h - 6*dpi);
+      ctx.restore();
+
+      if (!hasData) return;
+
+      // ===== Lines =====
+      const sample = (a,b,i)=>lerp(a[i] ?? b[i], b[i], progress);
+
+      // Temp (ส้ม)
+      ctx.save();
+      ctx.lineWidth = 3 * dpi;
+      ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--lineT').trim();
+      ctx.beginPath();
+      for(let i=0;i<N;i++){
+        const x = xAt(i);
+        const y = yAt(sample(anim.fromT, anim.toT, i));
+        i ? ctx.lineTo(x,y) : ctx.moveTo(x,y);
+      }
+      ctx.stroke();
+      ctx.restore();
+
+      // Humidity (ฟ้า)
+      ctx.save();
+      ctx.lineWidth = 3 * dpi;
+      ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--lineH').trim();
+      ctx.beginPath();
+      for(let i=0;i<N;i++){
+        const x = xAt(i);
+        const y = yAt(sample(anim.fromH, anim.toH, i));
+        i ? ctx.lineTo(x,y) : ctx.moveTo(x,y);
+      }
+      ctx.stroke();
+      ctx.restore();
     }
 
     function pushPoint(temp, hum){
-      const now = Date.now(); series.t.push(Number(temp)); series.h.push(Number(hum)); series.ts.push(now);
-      if(series.t.length>MAX_POINTS){ series.t.shift(); series.h.shift(); series.ts.shift(); } scheduleAnimation();
+      const now = Date.now();
+      series.t.push(Number(temp));
+      series.h.push(Number(hum));
+      series.ts.push(now);
+      if(series.t.length > MAX_POINTS){ series.t.shift(); series.h.shift(); series.ts.shift(); }
+      scheduleAnimation();
     }
 
     async function fetchData(){
       try{
         const res = await fetch(`${BACKEND_BASE}/data`, { cache: "no-store" });
         const data = await res.json();
+
         if (data.temperature !== null){
-          const t = Number(data.temperature); setText("temperature-value", t.toFixed(1));
-          if (!isNaN(t) && data.humidity !== null) pushPoint(t, Number(data.humidity));
+          const t = Number(data.temperature);
+          setText("temperature-value", t.toFixed(1));
+          if(!isNaN(t) && data.humidity !== null) pushPoint(t, Number(data.humidity));
         }
         if (data.humidity !== null){
-          const h = Number(data.humidity); setText("humidity-value", `${h.toFixed(0)}%`);
-          const donut = document.getElementById('humidity-donut'); if (donut) donut.style.setProperty('--p', Math.max(0, Math.min(100, h)));
+          const h = Number(data.humidity);
+          setText("humidity-value", `${h.toFixed(0)}%`);
+          const donut = document.getElementById('humidity-donut');
+          if (donut) donut.style.setProperty('--p', Math.max(0, Math.min(100, h)));
         }
         setText("status-message", "Data updated ✅");
-      }catch(err){ console.error("Fetch error:", err); setText("status-message", "Error fetching data ⚠️"); }
+      }catch(err){
+        console.error("Fetch error:", err);
+        setText("status-message", "Error fetching data ⚠️");
+      }
     }
-    fetchData(); setInterval(fetchData, 5000);
+
+    fetchData();
+    setInterval(fetchData, 5000);
   </script>
 </body>
 </html>
