@@ -1,17 +1,21 @@
 {
   "name": "backend",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "be.js",
   "scripts": {
+    "start": "node be.js",
+    "dev": "NODE_ENV=development node be.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
+  "description": "",
   "author": "",
   "license": "ISC",
-  "description": "",
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^5.1.0",
-    "mongoose": "^8.18.1"
+    "mongodb": "^6.19.0"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
