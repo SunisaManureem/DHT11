@@ -56,15 +56,22 @@
     .row{display:flex;align-items:center;justify-content:space-between;gap:12px}
     .label{font-weight:800;color:#2b3c54;display:flex;align-items:center;gap:8px}
 
+    /* ===== Donut (แก้ z-index ให้เลขอยู่บน) ===== */
     .donut{--p:0; width:128px; height:128px; border-radius:50%;
       background: conic-gradient(var(--lineH) calc(var(--p)*1%), #e3e9f1 0),
                   radial-gradient(closest-side, #ffffff 72%, transparent 74%, transparent 100%);
       border:1px solid rgba(0,0,0,.06); display:flex;align-items:center;justify-content:center;
       box-shadow: inset 0 10px 24px rgba(255,255,255,.6), 0 8px 18px rgba(0,0,0,.12);
       transition: background .7s cubic-bezier(.2,.7,.2,1); position:relative;}
-    .donut:after{content:""; position:absolute; inset:12px; border-radius:50%;
-      background:linear-gradient(180deg,#ffffff,#eef2f7); border:1px solid rgba(0,0,0,.04);}
-    .donut .num{position:relative;font-size:34px;font-weight:800;color:#2b3c54}
+    .donut:after{
+      content:""; position:absolute; inset:12px; border-radius:50%;
+      background:linear-gradient(180deg,#ffffff,#eef2f7); border:1px solid rgba(0,0,0,.04);
+      z-index:0; pointer-events:none; /* ให้อยู่ชั้นล่างและไม่บังการคลิก */
+    }
+    .donut .num{
+      position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+      font-size:34px; font-weight:800; color:#2b3c54; z-index:1; /* ตัวเลขอยู่ชั้นบนสุด */
+    }
 
     .chart-panel{grid-column:1 / -1;}
     .chart-card{position:relative; overflow:hidden}
@@ -72,7 +79,6 @@
       background:#e6ebf2; border:1px solid rgba(0,0,0,.06); border-radius:999px; padding:6px 10px; box-shadow:0 6px 14px rgba(0,0,0,.08);}
     .dot{width:10px;height:10px;border-radius:50%;}
     .t{background:var(--lineT)} .h{background:var(--lineH)}
-    /* เพิ่มความสูงเล็กน้อยเพื่อมีที่ว่างให้ข้อความแกนล่าง */
     canvas{width:100%; height:340px; display:block}
 
     .status-wrap{display:flex; justify-content:center; margin-top:14px}
@@ -127,8 +133,8 @@
   <script>
     /* ===== Backend polling & chart logic ===== */
     const BACKEND_BASE = "https://dht11-2gtd.onrender.com";
-    const MAX_POINTS = 60;                    // ~5 นาที หากดึงทุก 5 วินาที
-    const series = { t: [], h: [], ts: [] };  // temp, humidity, timestamp
+    const MAX_POINTS = 60;
+    const series = { t: [], h: [], ts: [] };
 
     function setText(id, value){ const el = document.getElementById(id); if (el) el.textContent = value; }
 
@@ -168,23 +174,14 @@
     }
     function tick(now){ const p=Math.min(1,(now-anim.start)/anim.dur); drawChart(p); if(p<1) requestAnimationFrame(tick); }
 
-    function formatTime(ts){
-      return new Date(ts).toLocaleTimeString('th-TH', { hour:'2-digit', minute:'2-digit', hour12:false });
-    }
-
     function drawChart(progress=1){
       const w = canvas.width, h = canvas.height;
       ctx.clearRect(0,0,w,h);
 
-      // padding สำหรับแกน/ป้าย (เผื่อที่ซ้ายให้ข้อความแกน Y แนวตั้ง)
-      const leftPad  = 46 * dpi;
-      const rightPad = 16 * dpi;
-      const topPad   = 16 * dpi;
-      const botPad   = 42 * dpi; // เผื่อที่สำหรับ "เวลา (เรียลไทม์)"
+      const leftPad  = 46 * dpi, rightPad = 16 * dpi, topPad = 16 * dpi, botPad = 42 * dpi;
       const plotW = w - leftPad - rightPad;
       const plotH = h - topPad - botPad;
 
-      // ค่าช่วงแกน
       const hasData = series.t.length >= 2;
       const minT = hasData ? Math.min(...series.t) : 20;
       const maxT = hasData ? Math.max(...series.t) : 30;
@@ -197,28 +194,18 @@
       const xAt = i => leftPad + (i/(N-1))*plotW;
       const yAt = v => topPad + (1 - (v - yMin)/(yMax - yMin))*plotH;
 
-      // ===== Grid =====
-      const gx = 8, gy = 5;  // จำนวนช่อง
+      // grid
+      const gx=8, gy=5;
       ctx.save();
-      ctx.strokeStyle = 'rgba(0,0,0,.10)';
-      ctx.lineWidth = 1 * dpi;
-
-      for(let i=0;i<=gx;i++){
-        const x = leftPad + (plotW/gx)*i;
-        ctx.beginPath(); ctx.moveTo(x, topPad); ctx.lineTo(x, topPad+plotH); ctx.stroke();
-      }
-      for(let i=0;i<=gy;i++){
-        const y = topPad + (plotH/gy)*i;
-        ctx.beginPath(); ctx.moveTo(leftPad, y); ctx.lineTo(leftPad+plotW, y); ctx.stroke();
-      }
+      ctx.strokeStyle = 'rgba(0,0,0,.10)'; ctx.lineWidth = 1*dpi;
+      for(let i=0;i<=gx;i++){ const x = leftPad + (plotW/gx)*i; ctx.beginPath(); ctx.moveTo(x,topPad); ctx.lineTo(x,topPad+plotH); ctx.stroke(); }
+      for(let i=0;i<=gy;i++){ const y = topPad + (plotH/gy)*i; ctx.beginPath(); ctx.moveTo(leftPad,y); ctx.lineTo(leftPad+plotW,y); ctx.stroke(); }
       ctx.restore();
 
-      // ===== Tick labels (Y) =====
+      // Y ticks
       ctx.save();
-      ctx.fillStyle = '#5f738f';
-      ctx.textAlign = 'right';
-      ctx.textBaseline = 'middle';
-      ctx.font = `${12*dpi}px Poppins, sans-serif`;
+      ctx.fillStyle='#5f738f'; ctx.textAlign='right'; ctx.textBaseline='middle';
+      ctx.font=`${12*dpi}px Poppins, sans-serif`;
       for(let i=0;i<=gy;i++){
         const y = topPad + (plotH/gy)*i;
         const val = yMax - (yMax - yMin) * (i/gy);
@@ -226,79 +213,42 @@
       }
       ctx.restore();
 
-      // ===== Tick labels (X) =====
+      // X ticks
       ctx.save();
-      ctx.fillStyle = '#5f738f';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-      ctx.font = `${12*dpi}px Poppins, sans-serif`;
-
+      ctx.fillStyle='#5f738f'; ctx.textAlign='center'; ctx.textBaseline='top';
+      ctx.font=`${12*dpi}px Poppins, sans-serif`;
+      const fmt = ts => new Date(ts).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit',hour12:false});
       if(hasData){
-        const minTs = series.ts[0];
-        const maxTs = series.ts[series.ts.length-1];
-        for(let i=0;i<=gx;i++){
-          const t = lerp(minTs, maxTs, i/gx);
-          ctx.fillText(formatTime(t), leftPad + (plotW/gx)*i, topPad + plotH + 8*dpi);
-        }
+        const minTs = series.ts[0], maxTs = series.ts[series.ts.length-1];
+        for(let i=0;i<=gx;i++){ const t = minTs + (maxTs-minTs)*(i/gx); ctx.fillText(fmt(t), leftPad + (plotW/gx)*i, topPad+plotH+8*dpi); }
       }else{
-        // ไม่มีข้อมูล: แสดงเวลาปัจจุบันเป็นตัวอย่าง 6 ตำแหน่ง
-        const now = Date.now();
-        for(let i=0;i<=gx;i++){
-          ctx.fillText(formatTime(now), leftPad + (plotW/gx)*i, topPad + plotH + 8*dpi);
-        }
+        const now = Date.now(); for(let i=0;i<=gx;i++){ ctx.fillText(fmt(now), leftPad + (plotW/gx)*i, topPad+plotH+8*dpi); }
       }
       ctx.restore();
 
-      // ===== Axis titles =====
-      // Y axis (vertical, ซ้ายมือ)
+      // Axis titles
       ctx.save();
-      ctx.fillStyle = '#2b3c54';
-      ctx.font = `${12*dpi}px Poppins, sans-serif`;
-      ctx.translate(12*dpi, topPad + plotH/2);
-      ctx.rotate(-Math.PI/2);
-      ctx.textAlign = 'center';
+      ctx.fillStyle='#2b3c54'; ctx.font=`${12*dpi}px Poppins, sans-serif`;
+      ctx.translate(12*dpi, topPad + plotH/2); ctx.rotate(-Math.PI/2); ctx.textAlign='center';
       ctx.fillText('อุณหภูมิ (°C) / ความชื้น (%RH)', 0, 0);
       ctx.restore();
 
-      // X axis (centered bottom)
       ctx.save();
-      ctx.fillStyle = '#2b3c54';
-      ctx.font = `${12*dpi}px Poppins, sans-serif`;
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'bottom';
+      ctx.fillStyle='#2b3c54'; ctx.font=`${12*dpi}px Poppins, sans-serif`; ctx.textAlign='center'; ctx.textBaseline='bottom';
       ctx.fillText('เวลา (เรียลไทม์)', leftPad + plotW/2, h - 6*dpi);
       ctx.restore();
 
       if (!hasData) return;
 
-      // ===== Lines =====
       const sample = (a,b,i)=>lerp(a[i] ?? b[i], b[i], progress);
 
-      // Temp (ส้ม)
-      ctx.save();
-      ctx.lineWidth = 3 * dpi;
-      ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--lineT').trim();
-      ctx.beginPath();
-      for(let i=0;i<N;i++){
-        const x = xAt(i);
-        const y = yAt(sample(anim.fromT, anim.toT, i));
-        i ? ctx.lineTo(x,y) : ctx.moveTo(x,y);
-      }
-      ctx.stroke();
-      ctx.restore();
+      // temp line
+      ctx.save(); ctx.lineWidth=3*dpi; ctx.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue('--lineT').trim();
+      ctx.beginPath(); for(let i=0;i<N;i++){ const x=xAt(i), y=yAt(sample(anim.fromT,anim.toT,i)); i?ctx.lineTo(x,y):ctx.moveTo(x,y); } ctx.stroke(); ctx.restore();
 
-      // Humidity (ฟ้า)
-      ctx.save();
-      ctx.lineWidth = 3 * dpi;
-      ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--lineH').trim();
-      ctx.beginPath();
-      for(let i=0;i<N;i++){
-        const x = xAt(i);
-        const y = yAt(sample(anim.fromH, anim.toH, i));
-        i ? ctx.lineTo(x,y) : ctx.moveTo(x,y);
-      }
-      ctx.stroke();
-      ctx.restore();
+      // humidity line
+      ctx.save(); ctx.lineWidth=3*dpi; ctx.strokeStyle=getComputedStyle(document.documentElement).getPropertyValue('--lineH').trim();
+      ctx.beginPath(); for(let i=0;i<N;i++){ const x=xAt(i), y=yAt(sample(anim.fromH,anim.toH,i)); i?ctx.lineTo(x,y):ctx.moveTo(x,y); } ctx.stroke(); ctx.restore();
     }
 
     function pushPoint(temp, hum){
